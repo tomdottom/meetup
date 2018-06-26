@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "meetup"
+version = "0.1.0"
+description = "A simple tool to query the meetup api"
+authors = ["Tom Marks <thomas.o.marks@gmail.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.6"
+requests = "^2.19"
+
+[tool.poetry.dev-dependencies]
+ipython = "^6.4"
+pudb = "^2018.1"
