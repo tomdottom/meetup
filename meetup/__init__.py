@@ -1,11 +1,13 @@
 import logging.config
 import math
 import os
+import textwrap
 import time
 
 import requests
 
 from .autohash import AutoHash
+from.memoized_property import memoized_property
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,8 +16,9 @@ logger = logging.getLogger(__name__)
 API_KEY = os.environ["MEETUP_API_KEY"]
 base_url = "https://api.meetup.com"
 endpoints = {
-    "members": (f"{base_url}/" + "{group}/members").format,
-    "events":  (f"{base_url}/" + "{group}/events").format,
+    "group/members": (f"{base_url}/" + "{group}/members").format,
+    "group/events":  (f"{base_url}/" + "{group}/events").format,
+    "member": (f"{base_url}/" + "members/{member_id}").format
 }
 
 
@@ -30,11 +33,21 @@ class MeetupRequest:
         rate_limit_remaining = int(resp.headers["X-RateLimit-Remaining"])
         rate_limit_reset = int(resp.headers["X-RateLimit-Reset"])
         if rate_limit_remaining <= 0:
-            time.sleep(rate_limit_reset + 1)
+            wait_time = rate_limit_reset + 1
+            logger.info(textwrap.dedent("""
+                Api RateLimit reached waiting {}
+                    limit: {}
+                    remaining: {}
+                    reset: {}
+            """).format(wait_time,
+                        rate_limit_limit,
+                        rate_limit_remaining,
+                        rate_limit_reset))
+            time.sleep(wait_time)
 
     @classmethod
     def _calculate_total_pages(cls, resp):
-        total_count = int(resp.headers["X-Total-Count"])
+        total_count = int(resp.headers.get("X-Total-Count", "0"))
         total_pages = math.ceil(total_count / cls.page_size)
         return total_pages
 
@@ -88,11 +101,11 @@ class MeetupRequest:
     @classmethod
     def _unique(cls, items):
         unique = set()
-        def _is_new(event):
-            if AutoHash(event["id"]) in unique:
+        def _is_new(item):
+            if AutoHash(item["id"]) in unique:
                 return False
             else:
-                unique.add(AutoHash(event["id"]))
+                unique.add(AutoHash(item["id"]))
                 return True
         items = [
             item
@@ -103,7 +116,7 @@ class MeetupRequest:
 
     @classmethod
     def members(cls, group):
-        responses = MeetupRequest.get(endpoints["members"](group=group))
+        responses = MeetupRequest.get(endpoints["group/members"](group=group))
         members = cls._unique(
             member
             for r in responses
@@ -114,7 +127,7 @@ class MeetupRequest:
     @classmethod
     def events(cls, group):
         responses = MeetupRequest.get(
-            endpoints["events"](group=group),
+            endpoints["group/events"](group=group),
             params={"status": "past"}
         )
         events = cls._unique(
@@ -124,10 +137,29 @@ class MeetupRequest:
         )
         return events
 
+    @classmethod
+    def memberships(cls, member_id):
+        responses = MeetupRequest.get(
+            endpoints["member"](member_id=member_id),
+            params = {
+                "fields": "memberships",
+                "only": "memberships"
+            }
+        )
+        memberships = responses[0].json().get("memberships", {})
+        organizer = memberships.get("organizer", [])
+        member = memberships.get("member", [])
+        return organizer + member
+
 
 class Group:
     def __init__(self, name):
         self.name = name
+
+    # TODO
+    # @property
+    # def info(self):
+    #     pass
 
     @property
     def members(self):
@@ -140,3 +172,12 @@ class Group:
         if not hasattr(self, "_events"):
             self._events = MeetupRequest.events(self.name)
         return self._events
+
+
+class Member:
+    def __init__(self, member_id):
+        self._member_id = member_id
+
+    @memoized_property
+    def memberships(self):
+        return MeetupRequest.memberships(self._member_id)
