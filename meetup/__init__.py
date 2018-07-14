@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 API_KEY = os.environ["MEETUP_API_KEY"]
 base_url = "https://api.meetup.com"
 endpoints = {
+    "group": (f"{base_url}/" + "{group}").format,
     "group/members": (f"{base_url}/" + "{group}/members").format,
     "group/events":  (f"{base_url}/" + "{group}/events").format,
     "member": (f"{base_url}/" + "members/{member_id}").format
@@ -115,6 +116,16 @@ class MeetupRequest:
         return items
 
     @classmethod
+    def coords(cls, group):
+        responses = MeetupRequest.get(
+            endpoints["group"](group=group),
+            params = {
+                "only": "lat,lon"
+            }
+        )
+        return responses[0].json()
+
+    @classmethod
     def members(cls, group):
         responses = MeetupRequest.get(endpoints["group/members"](group=group))
         members = cls._unique(
@@ -160,6 +171,17 @@ class Group:
     # @property
     # def info(self):
     #     pass
+    @property
+    def lat(self):
+        if not hasattr(self, "_coords"):
+            self._coords = MeetupRequest.coords(self.name)
+        return self._coords["lat"]
+
+    @property
+    def lon(self):
+        if not hasattr(self, "_coords"):
+            self._coords = MeetupRequest.coords(self.name)
+        return self._coords["lon"]
 
     @property
     def members(self):
