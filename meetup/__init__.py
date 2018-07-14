@@ -19,6 +19,7 @@ endpoints = {
     "group": (f"{base_url}/" + "{group}").format,
     "group/members": (f"{base_url}/" + "{group}/members").format,
     "group/events":  (f"{base_url}/" + "{group}/events").format,
+    "group/find":  (f"{base_url}/" + "find/groups").format,
     "member": (f"{base_url}/" + "members/{member_id}").format
 }
 
@@ -162,10 +163,31 @@ class MeetupRequest:
         member = memberships.get("member", [])
         return organizer + member
 
+    @classmethod
+    def find_groups(cls, lat, lon, radius):
+        # assert 0 < radius < 100
+        responses = MeetupRequest.get(
+            endpoints["group/find"](),
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "radius": radius,
+            }
+        )
+        groups = cls._unique(
+            group
+            for r in responses
+            for group in r.json()
+        )
+        return groups
+
 
 class Group:
-    def __init__(self, name):
+    def __init__(self, name, _coords=None):
         self.name = name
+        if _coords is not None:
+            self._coords = _coords
+
 
     # TODO
     # @property
@@ -194,6 +216,22 @@ class Group:
         if not hasattr(self, "_events"):
             self._events = MeetupRequest.events(self.name)
         return self._events
+
+
+class Groups:
+    @classmethod
+    def find(cls, lat, lon, radius):
+        return  [
+            Group(
+                name=group["urlname"],
+                _coords=dict(
+                    lat=group["lat"],
+                    lon=group["lon"],
+                )
+            )
+            for group in MeetupRequest.find_groups(lat=lat, lon=lon,
+                                                   radius=radius)
+        ]
 
 
 class Member:
